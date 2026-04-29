@@ -172,38 +172,69 @@ document.getElementById('input-area').addEventListener('input', function() {
 var TWO_YEARS_AGO = new Date();
 TWO_YEARS_AGO.setFullYear(TWO_YEARS_AGO.getFullYear() - 2);
 
-async function checkViaProxy(domain) {
-  // Use allorigins.win — a free CORS proxy that fetches any URL
-  var targetUrl = normalizeUrl(domain);
-  var proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(targetUrl);
+function interpretStatus(status, data, domain) {
+  var hasContent = data && data.contents && data.contents.length > 100;
+  if (status === 200) return { status: 'active', note: 'HTTP 200 — site is live' + (hasContent ? ' and returning content' : ''), method: 'http' };
+  if (status === 301 || status === 302 || status === 303 || status === 307 || status === 308) {
+    var finalUrl = (data && data.status && data.status.url) ? data.status.url : '';
+    var finalDomain = extractDomain(finalUrl);
+    if (!finalUrl || finalDomain === domain || finalUrl.indexOf('https://' + domain) === 0 || finalUrl.indexOf('https://www.' + domain) === 0) {
+      return { status: 'active', note: 'HTTP ' + status + ' redirect to HTTPS — site is live', method: 'http' };
+    }
+    return { status: 'uncertain', note: 'HTTP ' + status + ' redirect to different domain — may have rebranded', method: 'http' };
+  }
+  if (status === 401 || status === 403) return { status: 'active', note: 'HTTP ' + status + ' — server is active but blocking automated requests', method: 'http' };
+  if (status === 404) return { status: 'inactive', note: 'HTTP 404 — page not found', method: 'http' };
+  if (status === 410) return { status: 'inactive', note: 'HTTP 410 — site permanently gone', method: 'http' };
+  if (status === 429) return { status: 'active', note: 'HTTP 429 — server active but rate limiting requests', method: 'http' };
+  if (status >= 500) return { status: 'inactive', note: 'HTTP ' + status + ' — server error', method: 'http' };
+  if (status > 0) return { status: 'uncertain', note: 'HTTP ' + status, method: 'http' };
+  return null;
+}
+
+async function tryProxy(proxyUrl, domain, timeout) {
   try {
-    var resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(10000) });
+    var resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(timeout || 10000) });
     if (!resp.ok) return null;
     var data = await resp.json();
-    // allorigins returns status in contents metadata
     var status = data.status && data.status.http_code ? data.status.http_code : null;
-    var hasContent = data.contents && data.contents.length > 100;
-    if (status === 200 && hasContent) return { status: 'active', note: 'HTTP 200 — site is live and returning content', method: 'http' };
-    if (status === 200) return { status: 'active', note: 'HTTP 200 — server responded', method: 'http' };
-    if (status === 301 || status === 302) {
-      // http->https redirect on same domain is normal and means site is active
-      var finalUrl = data.status && data.status.url ? data.status.url : '';
-      var finalDomain = extractDomain(finalUrl);
-      var origDomain = domain;
-      if (finalDomain === origDomain || finalUrl.indexOf('https://' + origDomain) === 0 || finalUrl.indexOf('https://www.' + origDomain) === 0) {
-        return { status: 'active', note: 'HTTP ' + status + ' redirect to HTTPS — site is live', method: 'http' };
-      }
-      return { status: 'uncertain', note: 'HTTP ' + status + ' redirect to different domain — may have rebranded', method: 'http' };
+    if (!status && data.contents && data.contents.length > 50) status = 200;
+    if (!status) return null;
+    return interpretStatus(status, data, domain);
+  } catch(e) { return null; }
+}
+
+async function checkViaProxy(domain) {
+  var targetUrl = normalizeUrl(domain);
+  var targetUrlWww = normalizeUrl('www.' + domain);
+
+  // Proxy 1: allorigins.win
+  var r = await tryProxy('https://api.allorigins.win/get?url=' + encodeURIComponent(targetUrl), domain, 10000);
+  if (r) return r;
+
+  // Proxy 2: allorigins with www prefix
+  r = await tryProxy('https://api.allorigins.win/get?url=' + encodeURIComponent(targetUrlWww), domain, 8000);
+  if (r) return r;
+
+  // Proxy 3: corsproxy.io
+  try {
+    var resp = await fetch('https://corsproxy.io/?' + encodeURIComponent(targetUrl), { signal: AbortSignal.timeout(8000) });
+    if (resp.ok || resp.status === 403 || resp.status === 401 || resp.status === 429) {
+      return interpretStatus(resp.status, null, domain);
     }
-    if (status === 403) return { status: 'active', note: 'HTTP 403 — server active but blocking automated requests', method: 'http' };
-    if (status === 404) return { status: 'inactive', note: 'HTTP 404 — page not found', method: 'http' };
-    if (status === 410) return { status: 'inactive', note: 'HTTP 410 — site permanently gone', method: 'http' };
-    if (status >= 500) return { status: 'inactive', note: 'HTTP ' + status + ' — server error', method: 'http' };
-    if (status) return { status: 'uncertain', note: 'HTTP ' + status, method: 'http' };
-    return null;
-  } catch(e) {
-    return null;
-  }
+    if (resp.status === 404) return { status: 'inactive', note: 'HTTP 404 — page not found', method: 'http' };
+    if (resp.status >= 500) return { status: 'inactive', note: 'HTTP ' + resp.status + ' — server error', method: 'http' };
+  } catch(e) {}
+
+  // Proxy 4: htmlpreview / thingproxy
+  try {
+    var resp2 = await fetch('https://thingproxy.freeboard.io/fetch/' + targetUrl, { signal: AbortSignal.timeout(8000) });
+    if (resp2.ok) return { status: 'active', note: 'HTTP 200 — site is live', method: 'http' };
+    if (resp2.status === 403 || resp2.status === 401) return { status: 'active', note: 'HTTP ' + resp2.status + ' — server active but blocking bots', method: 'http' };
+    if (resp2.status === 404) return { status: 'inactive', note: 'HTTP 404 — page not found', method: 'http' };
+  } catch(e) {}
+
+  return null;
 }
 
 async function checkViaWayback(domain) {
