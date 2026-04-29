@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<title>Website Status Checker</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Arial, sans-serif; max-width: 860px; margin: 2rem auto; padding: 0 1rem; background: #fff; color: #111; }
+h2 { font-size: 18px; font-weight: 600; margin-bottom: 0.5rem; }
+p.sub { font-size: 13px; color: #888; margin-bottom: 1.5rem; }
+textarea { font-family: inherit; font-size: 14px; border: 1px solid #ddd; border-radius: 6px; padding: 8px 10px; width: 100%; resize: vertical; }
+button { font-family: inherit; font-size: 13px; border: 1px solid #ddd; border-radius: 6px; padding: 7px 14px; cursor: pointer; background: #fff; }
+button:hover { background: #f5f5f5; }
+button.primary { background: #1a2744; color: #fff; border-color: #1a2744; }
+button.primary:hover { background: #0f1a30; }
+button.stop-btn { background: #c0392b; color: #fff; border-color: #c0392b; }
+button.stop-btn:hover { background: #a93226; }
+button.export-btn { background: #1a7a4a; color: #fff; border-color: #1a7a4a; }
+button.export-btn:hover { background: #145e38; }
+button:disabled { background: #ddd !important; border-color: #ddd !important; color: #999 !important; cursor: not-allowed !important; }
+.card { border: 1px solid #e5e5e5; border-radius: 10px; padding: 1.25rem; margin-bottom: 1rem; }
+.card h3 { font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #333; }
+.metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 1.25rem; }
+.metric { background: #f7f7f7; border-radius: 8px; padding: 0.875rem; text-align: center; }
+.metric .label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+.metric .value { font-size: 22px; font-weight: 700; }
+.active-val { color: #27ae60; }
+.inactive-val { color: #c0392b; }
+.uncertain-val { color: #e67e22; }
+.total-val { color: #1a2744; }
+.progress-bar { background: #e8e8e8; border-radius: 4px; height: 8px; overflow: hidden; margin: 8px 0 4px; }
+.progress-fill { background: #1a2744; height: 100%; border-radius: 4px; transition: width 0.2s; }
+.prog-label { font-size: 11px; color: #888; }
+.btn-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+.result-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid #f5f5f5; font-size: 13px; }
+.result-row:last-child { border-bottom: none; }
+.result-name { flex: 1.2; font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.result-url  { flex: 1; font-size: 12px; color: #888; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.result-status { flex: 0 0 90px; text-align: right; }
+.result-note { flex: 1.5; font-size: 11px; color: #aaa; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px; text-transform: uppercase; }
+.badge.active    { background: #e8f5e9; color: #1b5e20; }
+.badge.inactive  { background: #fdecea; color: #a32d2d; }
+.badge.uncertain { background: #fff3e0; color: #e65100; }
+.badge.checking  { background: #e3f2fd; color: #0d47a1; }
+.col-hint       { font-size: 11px; color: #888; margin-top: 4px; }
+.col-hint.ok    { color: #27ae60; }
+.col-hint.warn  { color: #e67e22; }
+.results-header { display: flex; align-items: center; gap: 10px; padding: 0 0 6px; border-bottom: 1px solid #e8e8e8; margin-bottom: 6px; font-size: 11px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.04em; }
+.rh-name   { flex: 1.2; }
+.rh-url    { flex: 1; }
+.rh-status { flex: 0 0 90px; text-align: right; }
+.rh-note   { flex: 1.5; }
+.info-box  { background: #e3f2fd; border: 1px solid #b5d4f4; border-radius: 8px; padding: 0.875rem 1rem; font-size: 12px; color: #0d47a1; margin-bottom: 1rem; line-height: 1.6; }
+</style>
+</head>
+<body>
+
+<h2>Website Status Checker</h2>
+<p class="sub">Uses the Wayback Machine (archive.org) to check if a domain has been recently crawled and is still active.</p>
+
+<div class="info-box">
+  <strong>How it works:</strong> The Wayback Machine crawls and archives billions of websites. If a domain was crawled recently it is almost certainly active. If it has not been crawled in over 2 years, or has never been archived, it is likely defunct, parked, or redirected. This runs directly in your browser with no installs needed.
+</div>
+
+<div class="card">
+  <h3>Paste your account list</h3>
+  <p style="font-size:12px;color:#888;margin-bottom:8px;">
+    Tab-separated: <strong>Account Name</strong> + <strong>Website</strong> (copy from Excel), or just paste domains one per line.<br>
+    Domains like <code>google.com</code>, <code>acme.com</code>, or full URLs all work.
+  </p>
+  <textarea id="input-area" rows="8" placeholder="Acme Corp&#9;acme.com&#10;Google&#9;google.com&#10;Defunct Inc&#9;defunctinc.com&#10;&#10;Or just domains:&#10;zwicktechlabs.com&#10;google.com"></textarea>
+  <div class="col-hint" id="col-detect"></div>
+  <div class="btn-row">
+    <button class="primary" id="start-btn" onclick="startCheck()">Check website status</button>
+    <button class="stop-btn" id="stop-btn" onclick="stopCheck()" disabled>Stop</button>
+    <button onclick="clearAll()">Clear</button>
+    <span id="run-status" style="font-size:12px;color:#888;margin-left:4px;"></span>
+  </div>
+</div>
+
+<div class="metrics">
+  <div class="metric"><div class="label">Total</div><div class="value total-val" id="m-total">0</div></div>
+  <div class="metric"><div class="label">Active</div><div class="value active-val" id="m-active">0</div></div>
+  <div class="metric"><div class="label">Inactive</div><div class="value inactive-val" id="m-inactive">0</div></div>
+  <div class="metric"><div class="label">Uncertain</div><div class="value uncertain-val" id="m-uncertain">0</div></div>
+</div>
+
+<div id="progress-card" style="display:none;margin-bottom:1rem;">
+  <div class="progress-bar"><div class="progress-fill" id="prog-fill" style="width:0%"></div></div>
+  <div class="prog-label" id="prog-label">Starting...</div>
+</div>
+
+<div class="card" id="results-card" style="display:none;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+    <h3 style="margin:0;">Results</h3>
+    <button class="export-btn" id="export-btn" onclick="exportCSV()" disabled>Export all (CSV)</button>
+  </div>
+  <div class="results-header">
+    <span class="rh-name">Account</span>
+    <span class="rh-url">Domain</span>
+    <span class="rh-status">Status</span>
+    <span class="rh-note">Details</span>
+  </div>
+  <div id="results-list"></div>
+</div>
+
+<script>
+var allRows = [];
+var results = [];
+var stopped = false;
+var counts = { active:0, inactive:0, uncertain:0 };
+
+function looksLikeUrl(s) {
+  if (!s) return false;
+  s = s.trim();
+  if (/^https?:\/\//i.test(s)) return true;
+  if (/^[^\s]+\.[a-z]{2,}(\/\S*)?$/i.test(s)) return true;
+  return false;
+}
+
+function extractDomain(url) {
+  if (!url) return '';
+  url = url.trim().toLowerCase()
+    .replace(/^https?:\/\//,'').replace(/^www\./,'')
+    .split('/')[0].split('?')[0];
+  return url;
+}
+
+function parseLine(line) {
+  line = line.trim();
+  if (!line) return null;
+  if (line.indexOf('\t') >= 0) {
+    var p = line.split('\t');
+    var name = (p[0]||'').trim(), url = (p[1]||'').trim();
+    if (url) return { name: name||url, url: url };
+  }
+  if (looksLikeUrl(line)) return { name: line, url: line };
+  var tokens = line.split(/\s{2,}/);
+  if (tokens.length >= 2) {
+    var last = tokens[tokens.length-1].trim();
+    if (looksLikeUrl(last)) return { name: tokens.slice(0,tokens.length-1).join(' ').trim(), url: last };
+  }
+  return { name: line, url: '' };
+}
+
+function parseInput() {
+  return document.getElementById('input-area').value.trim()
+    .split('\n').map(parseLine).filter(Boolean);
+}
+
+document.getElementById('input-area').addEventListener('input', function() {
+  var parsed = parseInput();
+  var withUrl = parsed.filter(function(r){ return r.url; });
+  var hint = document.getElementById('col-detect');
+  if (!parsed.length) { hint.textContent=''; hint.className='col-hint'; return; }
+  if (withUrl.length === parsed.length) {
+    hint.textContent = 'Detected: ' + parsed.length + ' rows with domains — ready to check.';
+    hint.className = 'col-hint ok';
+  } else if (withUrl.length > 0) {
+    hint.textContent = withUrl.length + ' rows with domains, ' + (parsed.length - withUrl.length) + ' missing (will be skipped).';
+    hint.className = 'col-hint warn';
+  } else {
+    hint.textContent = 'No domains detected — make sure columns are tab-separated or paste domains directly.';
+    hint.className = 'col-hint warn';
+  }
+});
+
+// ── Wayback Machine availability API ──────────────────────────────────────
+// https://archive.org/wayback/available?url=example.com
+// Returns the closest snapshot and timestamp — completely free, no auth needed
+
+var TWO_YEARS_AGO = new Date();
+TWO_YEARS_AGO.setFullYear(TWO_YEARS_AGO.getFullYear() - 2);
+
+async function checkDomain(domain) {
+  try {
+    var url = 'https://archive.org/wayback/available?url=' + encodeURIComponent(domain);
+    var resp = await fetch(url, { method: 'GET' });
+    if (!resp.ok) return { status: 'uncertain', note: 'Wayback Machine returned error ' + resp.status };
+    var data = await resp.json();
+
+    if (!data.archived_snapshots || !data.archived_snapshots.closest) {
+      // Never archived — domain may be brand new or never indexed
+      return { status: 'uncertain', note: 'No archive record found — may be new or never indexed' };
+    }
+
+    var snap = data.archived_snapshots.closest;
+    var ts = snap.timestamp; // format: YYYYMMDDHHmmss
+    var snapStatus = snap.status;
+
+    // Parse snapshot date
+    var year  = parseInt(ts.substring(0,4));
+    var month = parseInt(ts.substring(4,6)) - 1;
+    var day   = parseInt(ts.substring(6,8));
+    var snapDate = new Date(year, month, day);
+    var now = new Date();
+    var monthsAgo = Math.round((now - snapDate) / (1000 * 60 * 60 * 24 * 30));
+    var dateStr = snapDate.toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' });
+
+    // HTTP status of the archived page
+    // 200 = page loaded fine, 301/302 = redirect, 404 = not found, etc.
+    var httpCode = parseInt(snapStatus);
+
+    if (httpCode === 200) {
+      if (snapDate >= TWO_YEARS_AGO) {
+        return { status: 'active', note: 'Last archived ' + dateStr + ' (' + monthsAgo + ' months ago) — page returned 200' };
+      } else {
+        return { status: 'uncertain', note: 'Last archived ' + dateStr + ' (' + monthsAgo + ' months ago) — may be outdated' };
+      }
+    } else if (httpCode === 301 || httpCode === 302 || httpCode === 303) {
+      return { status: 'uncertain', note: 'Last archived ' + dateStr + ' — redirected (' + httpCode + '), may have rebranded' };
+    } else if (httpCode === 404 || httpCode === 410) {
+      return { status: 'inactive', note: 'Last archived ' + dateStr + ' — returned ' + httpCode + ' (not found/gone)' };
+    } else if (httpCode >= 500) {
+      return { status: 'inactive', note: 'Last archived ' + dateStr + ' — server error (' + httpCode + ')' };
+    } else {
+      if (snapDate >= TWO_YEARS_AGO) {
+        return { status: 'active', note: 'Last archived ' + dateStr + ' (' + monthsAgo + ' months ago)' };
+      } else {
+        return { status: 'uncertain', note: 'Last archived ' + dateStr + ' — not crawled recently' };
+      }
+    }
+  } catch(e) {
+    return { status: 'uncertain', note: 'Error: ' + e.message };
+  }
+}
+
+function updateMetrics() {
+  var done = results.filter(Boolean).length;
+  document.getElementById('m-total').textContent = done;
+  document.getElementById('m-active').textContent = counts.active;
+  document.getElementById('m-inactive').textContent = counts.inactive;
+  document.getElementById('m-uncertain').textContent = counts.uncertain;
+}
+
+function addRow(idx, name, url, status, note) {
+  var list = document.getElementById('results-list');
+  var existing = document.getElementById('row-'+idx);
+  var bc = status==='active'?'active':status==='inactive'?'inactive':status==='checking'?'checking':'uncertain';
+  var html = '<div class="result-row" id="row-'+idx+'">'+
+    '<span class="result-name" title="'+name+'">'+name+'</span>'+
+    '<span class="result-url" title="'+url+'">'+url+'</span>'+
+    '<span class="result-status"><span class="badge '+bc+'">'+status+'</span></span>'+
+    '<span class="result-note" title="'+note+'">'+note+'</span>'+
+    '</div>';
+  if (existing) existing.outerHTML = html;
+  else list.insertAdjacentHTML('beforeend', html);
+}
+
+async function startCheck() {
+  var parsed = parseInput();
+  allRows = parsed.filter(function(r){ return r.url; });
+  var skipped = parsed.length - allRows.length;
+  if (!allRows.length) { alert('No domains found. Paste domains like "google.com" or tab-separated rows.'); return; }
+
+  results = new Array(allRows.length);
+  counts = { active:0, inactive:0, uncertain:0 };
+  stopped = false;
+  document.getElementById('results-list').innerHTML = '';
+  updateMetrics();
+  document.getElementById('start-btn').disabled = true;
+  document.getElementById('stop-btn').disabled = false;
+  document.getElementById('export-btn').disabled = true;
+  document.getElementById('progress-card').style.display = 'block';
+  document.getElementById('results-card').style.display = 'block';
+  document.getElementById('run-status').textContent = skipped > 0 ? '(' + skipped + ' rows skipped — no domain)' : '';
+
+  var total = allRows.length;
+  var completed = 0;
+
+  // Add placeholder rows
+  for (var i = 0; i < total; i++) {
+    addRow(i, allRows[i].name, extractDomain(allRows[i].url), 'checking', 'Queued...');
+  }
+
+  // Process with concurrency of 5 — Wayback Machine is fast and public
+  var CONCURRENCY = 5;
+  var queue = allRows.map(function(_,i){ return i; });
+  var active = [];
+
+  async function processOne(i) {
+    if (stopped) return;
+    var domain = extractDomain(allRows[i].url);
+    addRow(i, allRows[i].name, domain, 'checking', 'Checking...');
+    var r = await checkDomain(domain);
+    if (stopped) return;
+    results[i] = { name: allRows[i].name, url: domain, status: r.status, note: r.note };
+    counts[r.status]++;
+    completed++;
+    addRow(i, allRows[i].name, domain, r.status, r.note);
+    updateMetrics();
+    var pct = Math.round((completed/total)*100);
+    document.getElementById('prog-fill').style.width = pct+'%';
+    document.getElementById('prog-label').textContent = completed + ' of ' + total + ' checked (' + pct + '%)';
+    document.getElementById('run-status').textContent = completed + ' / ' + total;
+  }
+
+  async function runNext() {
+    if (stopped || queue.length === 0) return;
+    var i = queue.shift();
+    var p = processOne(i).then(function(){ active.splice(active.indexOf(p),1); return runNext(); });
+    active.push(p);
+  }
+
+  var starters = [];
+  for (var c = 0; c < Math.min(CONCURRENCY, total); c++) starters.push(runNext());
+  await Promise.all(starters);
+  while (active.length > 0) await Promise.all(active.slice());
+
+  document.getElementById('start-btn').disabled = false;
+  document.getElementById('stop-btn').disabled = true;
+  document.getElementById('export-btn').disabled = false;
+  if (!stopped) {
+    document.getElementById('prog-label').textContent = 'Complete — ' + total + ' domains checked.';
+    document.getElementById('run-status').textContent = 'Done!';
+  } else {
+    document.getElementById('prog-label').textContent = 'Stopped at ' + completed + ' of ' + total + '.';
+  }
+}
+
+function stopCheck() {
+  stopped = true;
+  document.getElementById('stop-btn').disabled = true;
+  document.getElementById('start-btn').disabled = false;
+  document.getElementById('export-btn').disabled = results.filter(Boolean).length === 0;
+}
+
+function exportCSV() {
+  var out = [['Account Name','Domain','Status','Details']];
+  for (var i = 0; i < results.length; i++) {
+    if (results[i]) out.push([
+      '"'+(results[i].name||'').replace(/"/g,'""')+'"',
+      '"'+(results[i].url||'').replace(/"/g,'""')+'"',
+      '"'+(results[i].status||'').replace(/"/g,'""')+'"',
+      '"'+(results[i].note||'').replace(/"/g,'""')+'"'
+    ]);
+  }
+  var csv = out.map(function(r){return r.join(',');}).join('\n');
+  var blob = new Blob([csv],{type:'text/csv'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href=url; a.download='website_status_results.csv';
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
+function clearAll() {
+  document.getElementById('input-area').value='';
+  document.getElementById('col-detect').textContent='';
+  document.getElementById('col-detect').className='col-hint';
+  document.getElementById('results-list').innerHTML='';
+  document.getElementById('results-card').style.display='none';
+  document.getElementById('progress-card').style.display='none';
+  document.getElementById('run-status').textContent='';
+  results=[]; counts={active:0,inactive:0,uncertain:0};
+  updateMetrics();
+  document.getElementById('export-btn').disabled=true;
+}
+</script>
+</body>
+</html>
