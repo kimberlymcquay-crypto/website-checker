@@ -19,7 +19,7 @@ button.export-btn:hover { background: #145e38; }
 button:disabled { background: #ddd !important; border-color: #ddd !important; color: #999 !important; cursor: not-allowed !important; }
 .card { border: 1px solid #e5e5e5; border-radius: 10px; padding: 1.25rem; margin-bottom: 1rem; }
 .card h3 { font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #333; }
-.metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 1.25rem; }
+.metrics { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 1.25rem; }
 .metric { background: #f7f7f7; border-radius: 8px; padding: 0.875rem; text-align: center; }
 .metric .label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
 .metric .value { font-size: 22px; font-weight: 700; }
@@ -40,6 +40,7 @@ button:disabled { background: #ddd !important; border-color: #ddd !important; co
 .badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px; text-transform: uppercase; }
 .badge.active { background: #e8f5e9; color: #1b5e20; }
 .badge.inactive { background: #fdecea; color: #a32d2d; }
+.badge.redirected { background: #f3e5f5; color: #6a1b9a; }
 .badge.uncertain { background: #fff3e0; color: #e65100; }
 .badge.checking { background: #e3f2fd; color: #0d47a1; }
 .col-hint { font-size: 11px; color: #888; margin-top: 4px; }
@@ -79,6 +80,7 @@ button:disabled { background: #ddd !important; border-color: #ddd !important; co
   <div class="metric"><div class="label">Total</div><div class="value total-val" id="m-total">0</div></div>
   <div class="metric"><div class="label">Active</div><div class="value active-val" id="m-active">0</div></div>
   <div class="metric"><div class="label">Inactive</div><div class="value inactive-val" id="m-inactive">0</div></div>
+  <div class="metric"><div class="label">Redirected</div><div class="value" style="color:#6a1b9a;" id="m-redirected">0</div></div>
   <div class="metric"><div class="label">Uncertain</div><div class="value uncertain-val" id="m-uncertain">0</div></div>
 </div>
 
@@ -105,7 +107,7 @@ button:disabled { background: #ddd !important; border-color: #ddd !important; co
 var allRows = [];
 var results = [];
 var stopped = false;
-var counts = { active:0, inactive:0, uncertain:0 };
+var counts = { active:0, inactive:0, uncertain:0, redirected:0 };
 
 function looksLikeUrl(s) {
   if (!s) return false;
@@ -262,42 +264,83 @@ async function checkViaWayback(domain) {
   }
 }
 
+async function checkForRedirect(domain) {
+  // Use allorigins to follow redirects and check if final URL is a different domain
+  var targetUrl = normalizeUrl(domain);
+  try {
+    var proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(targetUrl);
+    var resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(10000) });
+    if (!resp.ok) return null;
+    var data = await resp.json();
+    var finalUrl = data.status && data.status.url ? data.status.url : '';
+    var httpCode = data.status && data.status.http_code ? data.status.http_code : 0;
+    if ((httpCode === 301 || httpCode === 302 || httpCode === 303 || httpCode === 307 || httpCode === 308) && finalUrl) {
+      var finalDomain = extractDomain(finalUrl);
+      // Check if redirect goes to a completely different domain
+      if (finalDomain && finalDomain !== domain && finalDomain !== 'www.' + domain && ('www.' + finalDomain) !== domain) {
+        return { status: 'redirected', note: 'Redirects to ' + finalDomain + ' — may be acquired or rebranded', method: 'redirect' };
+      }
+    }
+    return null;
+  } catch(e) { return null; }
+}
+
 async function checkViaDNS(domain) {
-  // Google DNS-over-HTTPS — completely CORS-safe, tells us if domain resolves
+  // Google DNS-over-HTTPS — tells us if domain resolves, but NOT if company is active
   try {
     var url = 'https://dns.google/resolve?name=' + encodeURIComponent(domain) + '&type=A';
     var resp = await fetch(url, { signal: AbortSignal.timeout(6000) });
     if (!resp.ok) return null;
     var data = await resp.json();
-    // Status 0 = NOERROR (domain resolves), 3 = NXDOMAIN (domain doesn't exist)
+    // NXDOMAIN = domain doesn't exist at all = definitely inactive
     if (data.Status === 3) return { status: 'inactive', note: 'DNS: domain does not exist (NXDOMAIN)', method: 'dns' };
+    // Domain resolves but we can't confirm company is active without more signal
     if (data.Status === 0 && data.Answer && data.Answer.length > 0) {
       var ip = data.Answer.find(function(a){ return a.type === 1; });
-      if (ip) return { status: 'active', note: 'DNS resolves to ' + ip.data + ' — domain is active', method: 'dns' };
+      return { status: 'dns_resolves', ip: ip ? ip.data : '', method: 'dns' };
     }
-    if (data.Status === 0) return { status: 'active', note: 'DNS lookup successful — domain is registered and active', method: 'dns' };
     return null;
   } catch(e) { return null; }
 }
 
 async function checkDomain(domain) {
-  // Run proxy and DNS checks in parallel for speed
-  var proxyPromise = checkViaProxy(domain);
-  var dnsPromise = checkViaDNS(domain);
+  // Run all checks in parallel for speed
+  var proxyPromise   = checkViaProxy(domain);
+  var redirectPromise = checkForRedirect(domain);
+  var dnsPromise     = checkViaDNS(domain);
+  var waybackPromise = checkViaWayback(domain);
 
+  // Redirect check — if domain redirects to a completely different site, flag it
+  var redirectResult = await redirectPromise;
+  if (redirectResult && redirectResult.status === 'redirected') return redirectResult;
+
+  // Proxy HTTP check — most direct signal
   var proxyResult = await proxyPromise;
   if (proxyResult && proxyResult.status !== 'uncertain') return proxyResult;
 
-  // DNS is the most reliable for Cloudflare-protected sites
-  var dnsResult = await dnsPromise;
-  if (dnsResult) return dnsResult;
+  // DNS + Wayback combined — DNS alone isn't enough (defunct companies keep domains)
+  var dnsResult     = await dnsPromise;
+  var waybackResult = await waybackPromise;
 
-  // Use proxy uncertain result if we have one
-  if (proxyResult) return proxyResult;
+  // Domain doesn't exist at all = inactive
+  if (dnsResult && dnsResult.status === 'inactive') return dnsResult;
 
-  // Fall back to Wayback Machine
-  var waybackResult = await checkViaWayback(domain);
+  // DNS resolves + recent Wayback crawl = active (corroborated by two sources)
+  if (dnsResult && dnsResult.status === 'dns_resolves' && waybackResult && waybackResult.status === 'active') {
+    return { status: 'active', note: waybackResult.note + ' · DNS confirms domain is live', method: 'dns+wayback' };
+  }
+
+  // DNS resolves + old/no Wayback = uncertain (domain parked or company defunct but kept domain)
+  if (dnsResult && dnsResult.status === 'dns_resolves' && (!waybackResult || waybackResult.status !== 'active')) {
+    var ip = dnsResult.ip ? ' (IP: ' + dnsResult.ip + ')' : '';
+    return { status: 'uncertain', note: 'DNS resolves' + ip + ' but no recent archive — may be parked or defunct', method: 'dns+wayback' };
+  }
+
+  // Wayback result alone
   if (waybackResult) return waybackResult;
+
+  // Proxy uncertain result
+  if (proxyResult) return proxyResult;
 
   return { status: 'uncertain', note: 'Could not determine status via any method', method: 'none' };
 }
@@ -306,6 +349,7 @@ function updateMetrics() {
   document.getElementById('m-total').textContent = results.filter(Boolean).length;
   document.getElementById('m-active').textContent = counts.active;
   document.getElementById('m-inactive').textContent = counts.inactive;
+  document.getElementById('m-redirected').textContent = counts.redirected || 0;
   document.getElementById('m-uncertain').textContent = counts.uncertain;
 }
 
@@ -330,7 +374,7 @@ async function startCheck() {
   if (!allRows.length) { alert('No domains found. Paste domains like "google.com" or tab-separated rows.'); return; }
 
   results = new Array(allRows.length);
-  counts = { active:0, inactive:0, uncertain:0 };
+  counts = { active:0, inactive:0, uncertain:0, redirected:0 };
   stopped = false;
   document.getElementById('results-list').innerHTML = '';
   updateMetrics();
@@ -427,7 +471,7 @@ function clearAll() {
   document.getElementById('results-card').style.display='none';
   document.getElementById('progress-card').style.display='none';
   document.getElementById('run-status').textContent='';
-  results=[]; counts={active:0,inactive:0,uncertain:0};
+  results=[]; counts={active:0,inactive:0,uncertain:0,redirected:0};
   updateMetrics();
   document.getElementById('export-btn').disabled=true;
 }
