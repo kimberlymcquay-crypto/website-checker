@@ -2,7 +2,6 @@
 <html>
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <title>Website Status Checker</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -15,7 +14,6 @@ button:hover { background: #f5f5f5; }
 button.primary { background: #1a2744; color: #fff; border-color: #1a2744; }
 button.primary:hover { background: #0f1a30; }
 button.stop-btn { background: #c0392b; color: #fff; border-color: #c0392b; }
-button.stop-btn:hover { background: #a93226; }
 button.export-btn { background: #1a7a4a; color: #fff; border-color: #1a7a4a; }
 button.export-btn:hover { background: #145e38; }
 button:disabled { background: #ddd !important; border-color: #ddd !important; color: #999 !important; cursor: not-allowed !important; }
@@ -36,39 +34,36 @@ button:disabled { background: #ddd !important; border-color: #ddd !important; co
 .result-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid #f5f5f5; font-size: 13px; }
 .result-row:last-child { border-bottom: none; }
 .result-name { flex: 1.2; font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.result-url  { flex: 1; font-size: 12px; color: #888; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.result-url { flex: 1; font-size: 12px; color: #888; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .result-status { flex: 0 0 90px; text-align: right; }
 .result-note { flex: 1.5; font-size: 11px; color: #aaa; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px; text-transform: uppercase; }
-.badge.active    { background: #e8f5e9; color: #1b5e20; }
-.badge.inactive  { background: #fdecea; color: #a32d2d; }
+.badge.active { background: #e8f5e9; color: #1b5e20; }
+.badge.inactive { background: #fdecea; color: #a32d2d; }
 .badge.uncertain { background: #fff3e0; color: #e65100; }
-.badge.checking  { background: #e3f2fd; color: #0d47a1; }
-.col-hint       { font-size: 11px; color: #888; margin-top: 4px; }
-.col-hint.ok    { color: #27ae60; }
-.col-hint.warn  { color: #e67e22; }
+.badge.checking { background: #e3f2fd; color: #0d47a1; }
+.col-hint { font-size: 11px; color: #888; margin-top: 4px; }
+.col-hint.ok { color: #27ae60; }
+.col-hint.warn { color: #e67e22; }
 .results-header { display: flex; align-items: center; gap: 10px; padding: 0 0 6px; border-bottom: 1px solid #e8e8e8; margin-bottom: 6px; font-size: 11px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.04em; }
-.rh-name   { flex: 1.2; }
-.rh-url    { flex: 1; }
-.rh-status { flex: 0 0 90px; text-align: right; }
-.rh-note   { flex: 1.5; }
-.info-box  { background: #e3f2fd; border: 1px solid #b5d4f4; border-radius: 8px; padding: 0.875rem 1rem; font-size: 12px; color: #0d47a1; margin-bottom: 1rem; line-height: 1.6; }
+.rh-name { flex: 1.2; } .rh-url { flex: 1; } .rh-status { flex: 0 0 90px; text-align: right; } .rh-note { flex: 1.5; }
+.info-box { background: #e8f5e9; border: 1px solid #c8e6c9; border-radius: 8px; padding: 0.875rem 1rem; font-size: 12px; color: #1b5e20; margin-bottom: 1rem; line-height: 1.6; }
 </style>
 </head>
 <body>
 
 <h2>Website Status Checker</h2>
-<p class="sub">Uses the Wayback Machine (archive.org) to check if a domain has been recently crawled and is still active.</p>
+<p class="sub">Checks whether company websites are active or inactive using real HTTP requests.</p>
 
 <div class="info-box">
-  <strong>How it works:</strong> The Wayback Machine crawls and archives billions of websites. If a domain was crawled recently it is almost certainly active. If it has not been crawled in over 2 years, or has never been archived, it is likely defunct, parked, or redirected. This runs directly in your browser with no installs needed.
+  <strong>✓ Hosted version — full checking enabled.</strong> This tool makes real HTTP requests to each domain using a public CORS proxy and also checks the Wayback Machine for archive history. Results are based on actual server responses, not guesses.
 </div>
 
 <div class="card">
   <h3>Paste your account list</h3>
   <p style="font-size:12px;color:#888;margin-bottom:8px;">
-    Tab-separated: <strong>Account Name</strong> + <strong>Website</strong> (copy from Excel), or just paste domains one per line.<br>
-    Domains like <code>google.com</code>, <code>acme.com</code>, or full URLs all work.
+    Tab-separated: <strong>Account Name + Website</strong> (copy from Excel), or just paste domains one per line.<br>
+    Accepts <code>google.com</code>, <code>https://google.com</code>, or <code>www.google.com</code>.
   </p>
   <textarea id="input-area" rows="8" placeholder="Acme Corp&#9;acme.com&#10;Google&#9;google.com&#10;Defunct Inc&#9;defunctinc.com&#10;&#10;Or just domains:&#10;zwicktechlabs.com&#10;google.com"></textarea>
   <div class="col-hint" id="col-detect"></div>
@@ -122,9 +117,14 @@ function looksLikeUrl(s) {
 
 function extractDomain(url) {
   if (!url) return '';
-  url = url.trim().toLowerCase()
+  return url.trim().toLowerCase()
     .replace(/^https?:\/\//,'').replace(/^www\./,'')
-    .split('/')[0].split('?')[0];
+    .split('/')[0].split('?')[0].trim();
+}
+
+function normalizeUrl(url) {
+  url = url.trim();
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
   return url;
 }
 
@@ -159,77 +159,81 @@ document.getElementById('input-area').addEventListener('input', function() {
     hint.textContent = 'Detected: ' + parsed.length + ' rows with domains — ready to check.';
     hint.className = 'col-hint ok';
   } else if (withUrl.length > 0) {
-    hint.textContent = withUrl.length + ' rows with domains, ' + (parsed.length - withUrl.length) + ' missing (will be skipped).';
+    hint.textContent = withUrl.length + ' rows with domains, ' + (parsed.length-withUrl.length) + ' missing (will be skipped).';
     hint.className = 'col-hint warn';
   } else {
-    hint.textContent = 'No domains detected — make sure columns are tab-separated or paste domains directly.';
+    hint.textContent = 'No domains detected — paste domains like google.com or tab-separated rows.';
     hint.className = 'col-hint warn';
   }
 });
 
-// ── Wayback Machine availability API ──────────────────────────────────────
-// https://archive.org/wayback/available?url=example.com
-// Returns the closest snapshot and timestamp — completely free, no auth needed
+// ── Check via CORS proxy (real HTTP request) + Wayback Machine fallback ──
 
 var TWO_YEARS_AGO = new Date();
 TWO_YEARS_AGO.setFullYear(TWO_YEARS_AGO.getFullYear() - 2);
 
-async function checkDomain(domain) {
+async function checkViaProxy(domain) {
+  // Use allorigins.win — a free CORS proxy that fetches any URL
+  var targetUrl = normalizeUrl(domain);
+  var proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(targetUrl);
   try {
-    var url = 'https://archive.org/wayback/available?url=' + encodeURIComponent(domain);
-    var resp = await fetch(url, { method: 'GET' });
-    if (!resp.ok) return { status: 'uncertain', note: 'Wayback Machine returned error ' + resp.status };
+    var resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(10000) });
+    if (!resp.ok) return null;
     var data = await resp.json();
-
-    if (!data.archived_snapshots || !data.archived_snapshots.closest) {
-      // Never archived — domain may be brand new or never indexed
-      return { status: 'uncertain', note: 'No archive record found — may be new or never indexed' };
-    }
-
-    var snap = data.archived_snapshots.closest;
-    var ts = snap.timestamp; // format: YYYYMMDDHHmmss
-    var snapStatus = snap.status;
-
-    // Parse snapshot date
-    var year  = parseInt(ts.substring(0,4));
-    var month = parseInt(ts.substring(4,6)) - 1;
-    var day   = parseInt(ts.substring(6,8));
-    var snapDate = new Date(year, month, day);
-    var now = new Date();
-    var monthsAgo = Math.round((now - snapDate) / (1000 * 60 * 60 * 24 * 30));
-    var dateStr = snapDate.toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' });
-
-    // HTTP status of the archived page
-    // 200 = page loaded fine, 301/302 = redirect, 404 = not found, etc.
-    var httpCode = parseInt(snapStatus);
-
-    if (httpCode === 200) {
-      if (snapDate >= TWO_YEARS_AGO) {
-        return { status: 'active', note: 'Last archived ' + dateStr + ' (' + monthsAgo + ' months ago) — page returned 200' };
-      } else {
-        return { status: 'uncertain', note: 'Last archived ' + dateStr + ' (' + monthsAgo + ' months ago) — may be outdated' };
-      }
-    } else if (httpCode === 301 || httpCode === 302 || httpCode === 303) {
-      return { status: 'uncertain', note: 'Last archived ' + dateStr + ' — redirected (' + httpCode + '), may have rebranded' };
-    } else if (httpCode === 404 || httpCode === 410) {
-      return { status: 'inactive', note: 'Last archived ' + dateStr + ' — returned ' + httpCode + ' (not found/gone)' };
-    } else if (httpCode >= 500) {
-      return { status: 'inactive', note: 'Last archived ' + dateStr + ' — server error (' + httpCode + ')' };
-    } else {
-      if (snapDate >= TWO_YEARS_AGO) {
-        return { status: 'active', note: 'Last archived ' + dateStr + ' (' + monthsAgo + ' months ago)' };
-      } else {
-        return { status: 'uncertain', note: 'Last archived ' + dateStr + ' — not crawled recently' };
-      }
-    }
+    // allorigins returns status in contents metadata
+    var status = data.status && data.status.http_code ? data.status.http_code : null;
+    var hasContent = data.contents && data.contents.length > 100;
+    if (status === 200 && hasContent) return { status: 'active', note: 'HTTP 200 — site is live and returning content', method: 'http' };
+    if (status === 200) return { status: 'active', note: 'HTTP 200 — server responded', method: 'http' };
+    if (status === 301 || status === 302) return { status: 'uncertain', note: 'HTTP ' + status + ' redirect — may have moved or rebranded', method: 'http' };
+    if (status === 403) return { status: 'active', note: 'HTTP 403 — server active but blocking automated requests', method: 'http' };
+    if (status === 404) return { status: 'inactive', note: 'HTTP 404 — page not found', method: 'http' };
+    if (status === 410) return { status: 'inactive', note: 'HTTP 410 — site permanently gone', method: 'http' };
+    if (status >= 500) return { status: 'inactive', note: 'HTTP ' + status + ' — server error', method: 'http' };
+    if (status) return { status: 'uncertain', note: 'HTTP ' + status, method: 'http' };
+    return null;
   } catch(e) {
-    return { status: 'uncertain', note: 'Error: ' + e.message };
+    return null;
   }
 }
 
+async function checkViaWayback(domain) {
+  try {
+    var url = 'https://archive.org/wayback/available?url=' + encodeURIComponent(domain);
+    var resp = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!resp.ok) return null;
+    var data = await resp.json();
+    if (!data.archived_snapshots || !data.archived_snapshots.closest) {
+      return { status: 'uncertain', note: 'No archive record found — domain may be new or never indexed', method: 'wayback' };
+    }
+    var snap = data.archived_snapshots.closest;
+    var ts = snap.timestamp;
+    var snapDate = new Date(parseInt(ts.substring(0,4)), parseInt(ts.substring(4,6))-1, parseInt(ts.substring(6,8)));
+    var monthsAgo = Math.round((new Date() - snapDate) / (1000*60*60*24*30));
+    var dateStr = snapDate.toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' });
+    var httpCode = parseInt(snap.status);
+    if (httpCode === 200 && snapDate >= TWO_YEARS_AGO) return { status: 'active', note: 'Last archived ' + dateStr + ' (' + monthsAgo + ' months ago)', method: 'wayback' };
+    if (httpCode === 200) return { status: 'uncertain', note: 'Last archived ' + dateStr + ' — not crawled recently', method: 'wayback' };
+    if (httpCode === 404 || httpCode === 410) return { status: 'inactive', note: 'Last archived ' + dateStr + ' — returned ' + httpCode, method: 'wayback' };
+    if (httpCode >= 500) return { status: 'inactive', note: 'Last archived ' + dateStr + ' — server error ' + httpCode, method: 'wayback' };
+    return { status: 'uncertain', note: 'Last archived ' + dateStr + ' — HTTP ' + httpCode, method: 'wayback' };
+  } catch(e) {
+    return null;
+  }
+}
+
+async function checkDomain(domain) {
+  // Try real HTTP check first via CORS proxy
+  var proxyResult = await checkViaProxy(domain);
+  if (proxyResult) return proxyResult;
+  // Fall back to Wayback Machine
+  var waybackResult = await checkViaWayback(domain);
+  if (waybackResult) return waybackResult;
+  return { status: 'uncertain', note: 'Could not reach domain or archive', method: 'none' };
+}
+
 function updateMetrics() {
-  var done = results.filter(Boolean).length;
-  document.getElementById('m-total').textContent = done;
+  document.getElementById('m-total').textContent = results.filter(Boolean).length;
   document.getElementById('m-active').textContent = counts.active;
   document.getElementById('m-inactive').textContent = counts.inactive;
   document.getElementById('m-uncertain').textContent = counts.uncertain;
@@ -265,18 +269,16 @@ async function startCheck() {
   document.getElementById('export-btn').disabled = true;
   document.getElementById('progress-card').style.display = 'block';
   document.getElementById('results-card').style.display = 'block';
-  document.getElementById('run-status').textContent = skipped > 0 ? '(' + skipped + ' rows skipped — no domain)' : '';
+  document.getElementById('run-status').textContent = skipped > 0 ? '(' + skipped + ' rows skipped)' : '';
 
   var total = allRows.length;
   var completed = 0;
+  var CONCURRENCY = 5;
 
-  // Add placeholder rows
   for (var i = 0; i < total; i++) {
     addRow(i, allRows[i].name, extractDomain(allRows[i].url), 'checking', 'Queued...');
   }
 
-  // Process with concurrency of 5 — Wayback Machine is fast and public
-  var CONCURRENCY = 5;
   var queue = allRows.map(function(_,i){ return i; });
   var active = [];
 
@@ -286,7 +288,7 @@ async function startCheck() {
     addRow(i, allRows[i].name, domain, 'checking', 'Checking...');
     var r = await checkDomain(domain);
     if (stopped) return;
-    results[i] = { name: allRows[i].name, url: domain, status: r.status, note: r.note };
+    results[i] = { name: allRows[i].name, url: domain, status: r.status, note: r.note, method: r.method };
     counts[r.status]++;
     completed++;
     addRow(i, allRows[i].name, domain, r.status, r.note);
@@ -328,13 +330,14 @@ function stopCheck() {
 }
 
 function exportCSV() {
-  var out = [['Account Name','Domain','Status','Details']];
+  var out = [['Account Name','Domain','Status','Details','Check Method']];
   for (var i = 0; i < results.length; i++) {
     if (results[i]) out.push([
       '"'+(results[i].name||'').replace(/"/g,'""')+'"',
       '"'+(results[i].url||'').replace(/"/g,'""')+'"',
       '"'+(results[i].status||'').replace(/"/g,'""')+'"',
-      '"'+(results[i].note||'').replace(/"/g,'""')+'"'
+      '"'+(results[i].note||'').replace(/"/g,'""')+'"',
+      '"'+(results[i].method||'').replace(/"/g,'""')+'"'
     ]);
   }
   var csv = out.map(function(r){return r.join(',');}).join('\n');
