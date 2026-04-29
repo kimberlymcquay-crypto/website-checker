@@ -262,14 +262,44 @@ async function checkViaWayback(domain) {
   }
 }
 
+async function checkViaDNS(domain) {
+  // Google DNS-over-HTTPS — completely CORS-safe, tells us if domain resolves
+  try {
+    var url = 'https://dns.google/resolve?name=' + encodeURIComponent(domain) + '&type=A';
+    var resp = await fetch(url, { signal: AbortSignal.timeout(6000) });
+    if (!resp.ok) return null;
+    var data = await resp.json();
+    // Status 0 = NOERROR (domain resolves), 3 = NXDOMAIN (domain doesn't exist)
+    if (data.Status === 3) return { status: 'inactive', note: 'DNS: domain does not exist (NXDOMAIN)', method: 'dns' };
+    if (data.Status === 0 && data.Answer && data.Answer.length > 0) {
+      var ip = data.Answer.find(function(a){ return a.type === 1; });
+      if (ip) return { status: 'active', note: 'DNS resolves to ' + ip.data + ' — domain is active', method: 'dns' };
+    }
+    if (data.Status === 0) return { status: 'active', note: 'DNS lookup successful — domain is registered and active', method: 'dns' };
+    return null;
+  } catch(e) { return null; }
+}
+
 async function checkDomain(domain) {
-  // Try real HTTP check first via CORS proxy
-  var proxyResult = await checkViaProxy(domain);
+  // Run proxy and DNS checks in parallel for speed
+  var proxyPromise = checkViaProxy(domain);
+  var dnsPromise = checkViaDNS(domain);
+
+  var proxyResult = await proxyPromise;
+  if (proxyResult && proxyResult.status !== 'uncertain') return proxyResult;
+
+  // DNS is the most reliable for Cloudflare-protected sites
+  var dnsResult = await dnsPromise;
+  if (dnsResult) return dnsResult;
+
+  // Use proxy uncertain result if we have one
   if (proxyResult) return proxyResult;
+
   // Fall back to Wayback Machine
   var waybackResult = await checkViaWayback(domain);
   if (waybackResult) return waybackResult;
-  return { status: 'uncertain', note: 'Could not reach domain or archive', method: 'none' };
+
+  return { status: 'uncertain', note: 'Could not determine status via any method', method: 'none' };
 }
 
 function updateMetrics() {
