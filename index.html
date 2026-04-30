@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Website Status Checker</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Arial, sans-serif; max-width: 860px; margin: 2rem auto; padding: 0 1rem; background: #fff; color: #111; }
+h2 { font-size: 18px; font-weight: 600; margin-bottom: 0.5rem; }
+p.sub { font-size: 13px; color: #888; margin-bottom: 1.5rem; }
+textarea { font-family: inherit; font-size: 14px; border: 1px solid #ddd; border-radius: 6px; padding: 8px 10px; width: 100%; resize: vertical; }
+button { font-family: inherit; font-size: 13px; border: 1px solid #ddd; border-radius: 6px; padding: 7px 14px; cursor: pointer; background: #fff; }
+button:hover { background: #f5f5f5; }
+button.primary { background: #1a2744; color: #fff; border-color: #1a2744; }
+button.primary:hover { background: #0f1a30; }
+button.stop-btn { background: #c0392b; color: #fff; border-color: #c0392b; }
+button.export-btn { background: #1a7a4a; color: #fff; border-color: #1a7a4a; }
+button.export-btn:hover { background: #145e38; }
+button:disabled { background: #ddd !important; border-color: #ddd !important; color: #999 !important; cursor: not-allowed !important; }
+.card { border: 1px solid #e5e5e5; border-radius: 10px; padding: 1.25rem; margin-bottom: 1rem; }
+.card h3 { font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #333; }
+.metrics { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 1.25rem; }
+.metric { background: #f7f7f7; border-radius: 8px; padding: 0.875rem; text-align: center; }
+.metric .label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+.metric .value { font-size: 22px; font-weight: 700; }
+.active-val { color: #27ae60; }
+.inactive-val { color: #c0392b; }
+.uncertain-val { color: #e67e22; }
+.total-val { color: #1a2744; }
+.progress-bar { background: #e8e8e8; border-radius: 4px; height: 8px; overflow: hidden; margin: 8px 0 4px; }
+.progress-fill { background: #1a2744; height: 100%; border-radius: 4px; transition: width 0.2s; }
+.prog-label { font-size: 11px; color: #888; }
+.btn-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+.result-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid #f5f5f5; font-size: 13px; }
+.result-row:last-child { border-bottom: none; }
+.result-name { flex: 1.2; font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.result-url { flex: 1; font-size: 12px; color: #888; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.result-status { flex: 0 0 90px; text-align: right; }
+.result-note { flex: 1.5; font-size: 11px; color: #aaa; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px; text-transform: uppercase; }
+.badge.active { background: #e8f5e9; color: #1b5e20; }
+.badge.inactive { background: #fdecea; color: #a32d2d; }
+.badge.redirected { background: #f3e5f5; color: #6a1b9a; }
+.badge.uncertain { background: #fff3e0; color: #e65100; }
+.badge.checking { background: #e3f2fd; color: #0d47a1; }
+.col-hint { font-size: 11px; color: #888; margin-top: 4px; }
+.col-hint.ok { color: #27ae60; }
+.col-hint.warn { color: #e67e22; }
+.results-header { display: flex; align-items: center; gap: 10px; padding: 0 0 6px; border-bottom: 1px solid #e8e8e8; margin-bottom: 6px; font-size: 11px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.04em; }
+.rh-name { flex: 1.2; } .rh-url { flex: 1; } .rh-status { flex: 0 0 90px; text-align: right; } .rh-note { flex: 1.5; }
+.info-box { background: #e8f5e9; border: 1px solid #c8e6c9; border-radius: 8px; padding: 0.875rem 1rem; font-size: 12px; color: #1b5e20; margin-bottom: 1rem; line-height: 1.6; }
+</style>
+</head>
+<body>
+
+<h2>Website Status Checker</h2>
+<p class="sub">Checks whether company websites are active or inactive using real HTTP requests.</p>
+
+<div class="info-box">
+  <strong>✓ Hosted version — full checking enabled.</strong> This tool makes real HTTP requests to each domain using a public CORS proxy and also checks the Wayback Machine for archive history. Results are based on actual server responses, not guesses.
+</div>
+
+<div class="card">
+  <h3>Paste your account list</h3>
+  <p style="font-size:12px;color:#888;margin-bottom:8px;">
+    Tab-separated: <strong>Account Name + Website</strong> (copy from Excel), or just paste domains one per line.<br>
+    Accepts <code>google.com</code>, <code>https://google.com</code>, or <code>www.google.com</code>.
+  </p>
+  <textarea id="input-area" rows="8" placeholder="Acme Corp&#9;acme.com&#10;Google&#9;google.com&#10;Defunct Inc&#9;defunctinc.com&#10;&#10;Or just domains:&#10;zwicktechlabs.com&#10;google.com"></textarea>
+  <div class="col-hint" id="col-detect"></div>
+  <div class="btn-row">
+    <button class="primary" id="start-btn" onclick="startCheck()">Check website status</button>
+    <button class="stop-btn" id="stop-btn" onclick="stopCheck()" disabled>Stop</button>
+    <button onclick="clearAll()">Clear</button>
+    <span id="run-status" style="font-size:12px;color:#888;margin-left:4px;"></span>
+  </div>
+</div>
+
+<div class="metrics">
+  <div class="metric"><div class="label">Total</div><div class="value total-val" id="m-total">0</div></div>
+  <div class="metric"><div class="label">Active</div><div class="value active-val" id="m-active">0</div></div>
+  <div class="metric"><div class="label">Inactive</div><div class="value inactive-val" id="m-inactive">0</div></div>
+  <div class="metric"><div class="label">Redirected</div><div class="value" style="color:#6a1b9a;" id="m-redirected">0</div></div>
+  <div class="metric"><div class="label">Uncertain</div><div class="value uncertain-val" id="m-uncertain">0</div></div>
+</div>
+
+<div id="progress-card" style="display:none;margin-bottom:1rem;">
+  <div class="progress-bar"><div class="progress-fill" id="prog-fill" style="width:0%"></div></div>
+  <div class="prog-label" id="prog-label">Starting...</div>
+</div>
+
+<div class="card" id="results-card" style="display:none;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+    <h3 style="margin:0;">Results</h3>
+    <button class="export-btn" id="export-btn" onclick="exportCSV()" disabled>Export all (CSV)</button>
+  </div>
+  <div class="results-header">
+    <span class="rh-name">Account</span>
+    <span class="rh-url">Domain</span>
+    <span class="rh-status">Status</span>
+    <span class="rh-note">Details</span>
+  </div>
+  <div id="results-list"></div>
+</div>
+
+<script>
+var allRows = [];
+var results = [];
+var stopped = false;
+var counts = { active:0, inactive:0, uncertain:0, redirected:0 };
+
+function looksLikeUrl(s) {
+  if (!s) return false;
+  s = s.trim();
+  if (/^https?:\/\//i.test(s)) return true;
+  if (/^[^\s]+\.[a-z]{2,}(\/\S*)?$/i.test(s)) return true;
+  return false;
+}
+
+function extractDomain(url) {
+  if (!url) return '';
+  return url.trim().toLowerCase()
+    .replace(/^https?:\/\//,'').replace(/^www\./,'')
+    .split('/')[0].split('?')[0].trim();
+}
+
+function normalizeUrl(url) {
+  url = url.trim();
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+  return url;
+}
+
+function parseLine(line) {
+  line = line.trim();
+  if (!line) return null;
+  if (line.indexOf('\t') >= 0) {
+    var p = line.split('\t');
+    var name = (p[0]||'').trim(), url = (p[1]||'').trim();
+    if (url) return { name: name||url, url: url };
+  }
+  if (looksLikeUrl(line)) return { name: line, url: line };
+  var tokens = line.split(/\s{2,}/);
+  if (tokens.length >= 2) {
+    var last = tokens[tokens.length-1].trim();
+    if (looksLikeUrl(last)) return { name: tokens.slice(0,tokens.length-1).join(' ').trim(), url: last };
+  }
+  return { name: line, url: '' };
+}
+
+function parseInput() {
+  return document.getElementById('input-area').value.trim()
+    .split('\n').map(parseLine).filter(Boolean);
+}
+
+document.getElementById('input-area').addEventListener('input', function() {
+  var parsed = parseInput();
+  var withUrl = parsed.filter(function(r){ return r.url; });
+  var hint = document.getElementById('col-detect');
+  if (!parsed.length) { hint.textContent=''; hint.className='col-hint'; return; }
+  if (withUrl.length === parsed.length) {
+    hint.textContent = 'Detected: ' + parsed.length + ' rows with domains — ready to check.';
+    hint.className = 'col-hint ok';
+  } else if (withUrl.length > 0) {
+    hint.textContent = withUrl.length + ' rows with domains, ' + (parsed.length-withUrl.length) + ' missing (will be skipped).';
+    hint.className = 'col-hint warn';
+  } else {
+    hint.textContent = 'No domains detected — paste domains like google.com or tab-separated rows.';
+    hint.className = 'col-hint warn';
+  }
+});
+
+// ── Check via CORS proxy (real HTTP request) + Wayback Machine fallback ──
+
+var TWO_YEARS_AGO = new Date();
+TWO_YEARS_AGO.setFullYear(TWO_YEARS_AGO.getFullYear() - 2);
+
+function interpretStatus(status, data, domain) {
+  var hasContent = data && data.contents && data.contents.length > 100;
+  if (status === 200) return { status: 'active', note: 'HTTP 200 — site is live' + (hasContent ? ' and returning content' : ''), method: 'http' };
+  if (status === 301 || status === 302 || status === 303 || status === 307 || status === 308) {
+    var finalUrl = (data && data.status && data.status.url) ? data.status.url : '';
+    var finalDomain = extractDomain(finalUrl);
+    if (!finalUrl || finalDomain === domain || finalUrl.indexOf('https://' + domain) === 0 || finalUrl.indexOf('https://www.' + domain) === 0) {
+      return { status: 'active', note: 'HTTP ' + status + ' redirect to HTTPS — site is live', method: 'http' };
+    }
+    return { status: 'uncertain', note: 'HTTP ' + status + ' redirect to different domain — may have rebranded', method: 'http' };
+  }
+  if (status === 401 || status === 403) return { status: 'active', note: 'HTTP ' + status + ' — server is active but blocking automated requests', method: 'http' };
+  if (status === 404) return { status: 'inactive', note: 'HTTP 404 — page not found', method: 'http' };
+  if (status === 410) return { status: 'inactive', note: 'HTTP 410 — site permanently gone', method: 'http' };
+  if (status === 429) return { status: 'active', note: 'HTTP 429 — server active but rate limiting requests', method: 'http' };
+  if (status >= 500) return { status: 'inactive', note: 'HTTP ' + status + ' — server error', method: 'http' };
+  if (status > 0) return { status: 'uncertain', note: 'HTTP ' + status, method: 'http' };
+  return null;
+}
+
+async function tryProxy(proxyUrl, domain, timeout) {
+  try {
+    var resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(timeout || 10000) });
+    if (!resp.ok) return null;
+    var data = await resp.json();
+    var status = data.status && data.status.http_code ? data.status.http_code : null;
+    if (!status && data.contents && data.contents.length > 50) status = 200;
+    if (!status) return null;
+    return interpretStatus(status, data, domain);
+  } catch(e) { return null; }
+}
+
+async function checkViaProxy(domain) {
+  var targetUrl = normalizeUrl(domain);
+  var targetUrlWww = normalizeUrl('www.' + domain);
+
+  // Proxy 1: allorigins.win
+  var r = await tryProxy('https://api.allorigins.win/get?url=' + encodeURIComponent(targetUrl), domain, 10000);
+  if (r) return r;
+
+  // Proxy 2: allorigins with www prefix
+  r = await tryProxy('https://api.allorigins.win/get?url=' + encodeURIComponent(targetUrlWww), domain, 8000);
+  if (r) return r;
+
+  // Proxy 3: corsproxy.io
+  try {
+    var resp = await fetch('https://corsproxy.io/?' + encodeURIComponent(targetUrl), { signal: AbortSignal.timeout(8000) });
+    if (resp.ok || resp.status === 403 || resp.status === 401 || resp.status === 429) {
+      return interpretStatus(resp.status, null, domain);
+    }
+    if (resp.status === 404) return { status: 'inactive', note: 'HTTP 404 — page not found', method: 'http' };
+    if (resp.status >= 500) return { status: 'inactive', note: 'HTTP ' + resp.status + ' — server error', method: 'http' };
+  } catch(e) {}
+
+  // Proxy 4: htmlpreview / thingproxy
+  try {
+    var resp2 = await fetch('https://thingproxy.freeboard.io/fetch/' + targetUrl, { signal: AbortSignal.timeout(8000) });
+    if (resp2.ok) return { status: 'active', note: 'HTTP 200 — site is live', method: 'http' };
+    if (resp2.status === 403 || resp2.status === 401) return { status: 'active', note: 'HTTP ' + resp2.status + ' — server active but blocking bots', method: 'http' };
+    if (resp2.status === 404) return { status: 'inactive', note: 'HTTP 404 — page not found', method: 'http' };
+  } catch(e) {}
+
+  return null;
+}
+
+async function checkViaWayback(domain) {
+  try {
+    var url = 'https://archive.org/wayback/available?url=' + encodeURIComponent(domain);
+    var resp = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!resp.ok) return null;
+    var data = await resp.json();
+    if (!data.archived_snapshots || !data.archived_snapshots.closest) {
+      return { status: 'uncertain', note: 'No archive record found — domain may be new or never indexed', method: 'wayback' };
+    }
+    var snap = data.archived_snapshots.closest;
+    var ts = snap.timestamp;
+    var snapDate = new Date(parseInt(ts.substring(0,4)), parseInt(ts.substring(4,6))-1, parseInt(ts.substring(6,8)));
+    var monthsAgo = Math.round((new Date() - snapDate) / (1000*60*60*24*30));
+    var dateStr = snapDate.toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' });
+    var httpCode = parseInt(snap.status);
+    if (httpCode === 200 && snapDate >= TWO_YEARS_AGO) return { status: 'active', note: 'Last archived ' + dateStr + ' (' + monthsAgo + ' months ago)', method: 'wayback' };
+    if (httpCode === 200) return { status: 'uncertain', note: 'Last archived ' + dateStr + ' — not crawled recently', method: 'wayback' };
+    if (httpCode === 404 || httpCode === 410) return { status: 'inactive', note: 'Last archived ' + dateStr + ' — returned ' + httpCode, method: 'wayback' };
+    if (httpCode >= 500) return { status: 'inactive', note: 'Last archived ' + dateStr + ' — server error ' + httpCode, method: 'wayback' };
+    return { status: 'uncertain', note: 'Last archived ' + dateStr + ' — HTTP ' + httpCode, method: 'wayback' };
+  } catch(e) {
+    return null;
+  }
+}
+
+async function checkForRedirect(domain) {
+  var targetUrl = normalizeUrl(domain);
+  var targetUrlWww = normalizeUrl('www.' + domain);
+
+  // Try multiple proxies to detect redirects — need the final resolved URL
+  var proxiesToTry = [
+    'https://api.allorigins.win/get?url=' + encodeURIComponent(targetUrl),
+    'https://api.allorigins.win/get?url=' + encodeURIComponent(targetUrlWww),
+  ];
+
+  for (var p = 0; p < proxiesToTry.length; p++) {
+    try {
+      var resp = await fetch(proxiesToTry[p], { signal: AbortSignal.timeout(10000) });
+      if (!resp.ok) continue;
+      var data = await resp.json();
+      var finalUrl = data.status && data.status.url ? data.status.url : '';
+      var httpCode = data.status && data.status.http_code ? data.status.http_code : 0;
+
+      // Check both redirect status codes AND final URL being different domain
+      var finalDomain = finalUrl ? extractDomain(finalUrl) : '';
+
+      // If we got a redirect code to a different domain
+      if ((httpCode === 301 || httpCode === 302 || httpCode === 303 || httpCode === 307 || httpCode === 308) && finalDomain) {
+        if (finalDomain !== domain && finalDomain !== 'www.'+domain && ('www.'+finalDomain) !== domain) {
+          return { status: 'redirected', note: 'Redirects to ' + finalDomain + ' — may be acquired or rebranded', method: 'redirect' };
+        }
+      }
+
+      // Even if status is 200, check if the final URL landed on a completely different domain
+      // This catches cases where Cloudflare resolves a redirect transparently
+      if (finalUrl && finalDomain && finalDomain !== domain && finalDomain !== 'www.'+domain && ('www.'+finalDomain) !== domain) {
+        // Make sure it's not just a CDN or tracker subdomain of the same company
+        var domainRoot = domain.split('.').slice(-2).join('.');
+        var finalRoot  = finalDomain.split('.').slice(-2).join('.');
+        if (domainRoot !== finalRoot) {
+          return { status: 'redirected', note: 'Resolved to ' + finalDomain + ' — may be acquired or rebranded', method: 'redirect' };
+        }
+      }
+    } catch(e) { continue; }
+  }
+
+  // Also try corsproxy which returns headers including location
+  try {
+    var cpResp = await fetch('https://corsproxy.io/?' + encodeURIComponent(targetUrl), { signal: AbortSignal.timeout(8000) });
+    var location = cpResp.headers.get('x-final-url') || cpResp.headers.get('location') || cpResp.url || '';
+    if (location) {
+      var locDomain = extractDomain(location);
+      if (locDomain && locDomain !== domain && locDomain !== 'www.'+domain && ('www.'+locDomain) !== domain) {
+        var domainRoot2 = domain.split('.').slice(-2).join('.');
+        var finalRoot2  = locDomain.split('.').slice(-2).join('.');
+        if (domainRoot2 !== finalRoot2) {
+          return { status: 'redirected', note: 'Redirects to ' + locDomain + ' — may be acquired or rebranded', method: 'redirect' };
+        }
+      }
+    }
+  } catch(e) {}
+
+  return null;
+}
+
+async function checkViaDNS(domain) {
+  // Google DNS-over-HTTPS — tells us if domain resolves, but NOT if company is active
+  try {
+    var url = 'https://dns.google/resolve?name=' + encodeURIComponent(domain) + '&type=A';
+    var resp = await fetch(url, { signal: AbortSignal.timeout(6000) });
+    if (!resp.ok) return null;
+    var data = await resp.json();
+    // NXDOMAIN = domain doesn't exist at all = definitely inactive
+    if (data.Status === 3) return { status: 'inactive', note: 'DNS: domain does not exist (NXDOMAIN)', method: 'dns' };
+    // Domain resolves but we can't confirm company is active without more signal
+    if (data.Status === 0 && data.Answer && data.Answer.length > 0) {
+      var ip = data.Answer.find(function(a){ return a.type === 1; });
+      return { status: 'dns_resolves', ip: ip ? ip.data : '', method: 'dns' };
+    }
+    return null;
+  } catch(e) { return null; }
+}
+
+async function checkDomain(domain) {
+  // Run all checks in parallel for speed
+  var proxyPromise   = checkViaProxy(domain);
+  var redirectPromise = checkForRedirect(domain);
+  var dnsPromise     = checkViaDNS(domain);
+  var waybackPromise = checkViaWayback(domain);
+
+  // Redirect check — if domain redirects to a completely different site, flag it
+  var redirectResult = await redirectPromise;
+  if (redirectResult && redirectResult.status === 'redirected') return redirectResult;
+
+  // Proxy HTTP check — most direct signal
+  var proxyResult = await proxyPromise;
+  if (proxyResult && proxyResult.status !== 'uncertain') return proxyResult;
+
+  // DNS + Wayback combined — DNS alone isn't enough (defunct companies keep domains)
+  var dnsResult     = await dnsPromise;
+  var waybackResult = await waybackPromise;
+
+  // Domain doesn't exist at all = inactive
+  if (dnsResult && dnsResult.status === 'inactive') return dnsResult;
+
+  // DNS resolves + recent Wayback crawl = active (corroborated by two sources)
+  if (dnsResult && dnsResult.status === 'dns_resolves' && waybackResult && waybackResult.status === 'active') {
+    return { status: 'active', note: waybackResult.note + ' · DNS confirms domain is live', method: 'dns+wayback' };
+  }
+
+  // DNS resolves + old/no Wayback = uncertain (domain parked or company defunct but kept domain)
+  if (dnsResult && dnsResult.status === 'dns_resolves' && (!waybackResult || waybackResult.status !== 'active')) {
+    var ip = dnsResult.ip ? ' (IP: ' + dnsResult.ip + ')' : '';
+    return { status: 'uncertain', note: 'DNS resolves' + ip + ' but no recent archive — may be parked or defunct', method: 'dns+wayback' };
+  }
+
+  // Wayback result alone
+  if (waybackResult) return waybackResult;
+
+  // Proxy uncertain result
+  if (proxyResult) return proxyResult;
+
+  return { status: 'uncertain', note: 'Could not determine status via any method', method: 'none' };
+}
+
+function updateMetrics() {
+  document.getElementById('m-total').textContent = results.filter(Boolean).length;
+  document.getElementById('m-active').textContent = counts.active;
+  document.getElementById('m-inactive').textContent = counts.inactive;
+  document.getElementById('m-redirected').textContent = counts.redirected || 0;
+  document.getElementById('m-uncertain').textContent = counts.uncertain;
+}
+
+function addRow(idx, name, url, status, note) {
+  var list = document.getElementById('results-list');
+  var existing = document.getElementById('row-'+idx);
+  var bc = status==='active'?'active':status==='inactive'?'inactive':status==='checking'?'checking':'uncertain';
+  var html = '<div class="result-row" id="row-'+idx+'">'+
+    '<span class="result-name" title="'+name+'">'+name+'</span>'+
+    '<span class="result-url" title="'+url+'">'+url+'</span>'+
+    '<span class="result-status"><span class="badge '+bc+'">'+status+'</span></span>'+
+    '<span class="result-note" title="'+note+'">'+note+'</span>'+
+    '</div>';
+  if (existing) existing.outerHTML = html;
+  else list.insertAdjacentHTML('beforeend', html);
+}
+
+async function startCheck() {
+  var parsed = parseInput();
+  allRows = parsed.filter(function(r){ return r.url; });
+  var skipped = parsed.length - allRows.length;
+  if (!allRows.length) { alert('No domains found. Paste domains like "google.com" or tab-separated rows.'); return; }
+
+  results = new Array(allRows.length);
+  counts = { active:0, inactive:0, uncertain:0, redirected:0 };
+  stopped = false;
+  document.getElementById('results-list').innerHTML = '';
+  updateMetrics();
+  document.getElementById('start-btn').disabled = true;
+  document.getElementById('stop-btn').disabled = false;
+  document.getElementById('export-btn').disabled = true;
+  document.getElementById('progress-card').style.display = 'block';
+  document.getElementById('results-card').style.display = 'block';
+  document.getElementById('run-status').textContent = skipped > 0 ? '(' + skipped + ' rows skipped)' : '';
+
+  var total = allRows.length;
+  var completed = 0;
+  var CONCURRENCY = 5;
+
+  for (var i = 0; i < total; i++) {
+    addRow(i, allRows[i].name, extractDomain(allRows[i].url), 'checking', 'Queued...');
+  }
+
+  var queue = allRows.map(function(_,i){ return i; });
+  var active = [];
+
+  async function processOne(i) {
+    if (stopped) return;
+    var domain = extractDomain(allRows[i].url);
+    addRow(i, allRows[i].name, domain, 'checking', 'Checking...');
+    var r = await checkDomain(domain);
+    if (stopped) return;
+    results[i] = { name: allRows[i].name, url: domain, status: r.status, note: r.note, method: r.method };
+    counts[r.status]++;
+    completed++;
+    addRow(i, allRows[i].name, domain, r.status, r.note);
+    updateMetrics();
+    var pct = Math.round((completed/total)*100);
+    document.getElementById('prog-fill').style.width = pct+'%';
+    document.getElementById('prog-label').textContent = completed + ' of ' + total + ' checked (' + pct + '%)';
+    document.getElementById('run-status').textContent = completed + ' / ' + total;
+  }
+
+  async function runNext() {
+    if (stopped || queue.length === 0) return;
+    var i = queue.shift();
+    var p = processOne(i).then(function(){ active.splice(active.indexOf(p),1); return runNext(); });
+    active.push(p);
+  }
+
+  var starters = [];
+  for (var c = 0; c < Math.min(CONCURRENCY, total); c++) starters.push(runNext());
+  await Promise.all(starters);
+  while (active.length > 0) await Promise.all(active.slice());
+
+  document.getElementById('start-btn').disabled = false;
+  document.getElementById('stop-btn').disabled = true;
+  document.getElementById('export-btn').disabled = false;
+  if (!stopped) {
+    document.getElementById('prog-label').textContent = 'Complete — ' + total + ' domains checked.';
+    document.getElementById('run-status').textContent = 'Done!';
+  } else {
+    document.getElementById('prog-label').textContent = 'Stopped at ' + completed + ' of ' + total + '.';
+  }
+}
+
+function stopCheck() {
+  stopped = true;
+  document.getElementById('stop-btn').disabled = true;
+  document.getElementById('start-btn').disabled = false;
+  document.getElementById('export-btn').disabled = results.filter(Boolean).length === 0;
+}
+
+function exportCSV() {
+  var out = [['Account Name','Domain','Status','Details','Check Method']];
+  for (var i = 0; i < results.length; i++) {
+    if (results[i]) out.push([
+      '"'+(results[i].name||'').replace(/"/g,'""')+'"',
+      '"'+(results[i].url||'').replace(/"/g,'""')+'"',
+      '"'+(results[i].status||'').replace(/"/g,'""')+'"',
+      '"'+(results[i].note||'').replace(/"/g,'""')+'"',
+      '"'+(results[i].method||'').replace(/"/g,'""')+'"'
+    ]);
+  }
+  var csv = out.map(function(r){return r.join(',');}).join('\n');
+  var blob = new Blob([csv],{type:'text/csv'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href=url; a.download='website_status_results.csv';
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
+function clearAll() {
+  document.getElementById('input-area').value='';
+  document.getElementById('col-detect').textContent='';
+  document.getElementById('col-detect').className='col-hint';
+  document.getElementById('results-list').innerHTML='';
+  document.getElementById('results-card').style.display='none';
+  document.getElementById('progress-card').style.display='none';
+  document.getElementById('run-status').textContent='';
+  results=[]; counts={active:0,inactive:0,uncertain:0,redirected:0};
+  updateMetrics();
+  document.getElementById('export-btn').disabled=true;
+}
+</script>
+</body>
+</html>
