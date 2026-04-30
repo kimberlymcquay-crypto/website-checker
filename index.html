@@ -265,24 +265,63 @@ async function checkViaWayback(domain) {
 }
 
 async function checkForRedirect(domain) {
-  // Use allorigins to follow redirects and check if final URL is a different domain
   var targetUrl = normalizeUrl(domain);
+  var targetUrlWww = normalizeUrl('www.' + domain);
+
+  // Try multiple proxies to detect redirects — need the final resolved URL
+  var proxiesToTry = [
+    'https://api.allorigins.win/get?url=' + encodeURIComponent(targetUrl),
+    'https://api.allorigins.win/get?url=' + encodeURIComponent(targetUrlWww),
+  ];
+
+  for (var p = 0; p < proxiesToTry.length; p++) {
+    try {
+      var resp = await fetch(proxiesToTry[p], { signal: AbortSignal.timeout(10000) });
+      if (!resp.ok) continue;
+      var data = await resp.json();
+      var finalUrl = data.status && data.status.url ? data.status.url : '';
+      var httpCode = data.status && data.status.http_code ? data.status.http_code : 0;
+
+      // Check both redirect status codes AND final URL being different domain
+      var finalDomain = finalUrl ? extractDomain(finalUrl) : '';
+
+      // If we got a redirect code to a different domain
+      if ((httpCode === 301 || httpCode === 302 || httpCode === 303 || httpCode === 307 || httpCode === 308) && finalDomain) {
+        if (finalDomain !== domain && finalDomain !== 'www.'+domain && ('www.'+finalDomain) !== domain) {
+          return { status: 'redirected', note: 'Redirects to ' + finalDomain + ' — may be acquired or rebranded', method: 'redirect' };
+        }
+      }
+
+      // Even if status is 200, check if the final URL landed on a completely different domain
+      // This catches cases where Cloudflare resolves a redirect transparently
+      if (finalUrl && finalDomain && finalDomain !== domain && finalDomain !== 'www.'+domain && ('www.'+finalDomain) !== domain) {
+        // Make sure it's not just a CDN or tracker subdomain of the same company
+        var domainRoot = domain.split('.').slice(-2).join('.');
+        var finalRoot  = finalDomain.split('.').slice(-2).join('.');
+        if (domainRoot !== finalRoot) {
+          return { status: 'redirected', note: 'Resolved to ' + finalDomain + ' — may be acquired or rebranded', method: 'redirect' };
+        }
+      }
+    } catch(e) { continue; }
+  }
+
+  // Also try corsproxy which returns headers including location
   try {
-    var proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(targetUrl);
-    var resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(10000) });
-    if (!resp.ok) return null;
-    var data = await resp.json();
-    var finalUrl = data.status && data.status.url ? data.status.url : '';
-    var httpCode = data.status && data.status.http_code ? data.status.http_code : 0;
-    if ((httpCode === 301 || httpCode === 302 || httpCode === 303 || httpCode === 307 || httpCode === 308) && finalUrl) {
-      var finalDomain = extractDomain(finalUrl);
-      // Check if redirect goes to a completely different domain
-      if (finalDomain && finalDomain !== domain && finalDomain !== 'www.' + domain && ('www.' + finalDomain) !== domain) {
-        return { status: 'redirected', note: 'Redirects to ' + finalDomain + ' — may be acquired or rebranded', method: 'redirect' };
+    var cpResp = await fetch('https://corsproxy.io/?' + encodeURIComponent(targetUrl), { signal: AbortSignal.timeout(8000) });
+    var location = cpResp.headers.get('x-final-url') || cpResp.headers.get('location') || cpResp.url || '';
+    if (location) {
+      var locDomain = extractDomain(location);
+      if (locDomain && locDomain !== domain && locDomain !== 'www.'+domain && ('www.'+locDomain) !== domain) {
+        var domainRoot2 = domain.split('.').slice(-2).join('.');
+        var finalRoot2  = locDomain.split('.').slice(-2).join('.');
+        if (domainRoot2 !== finalRoot2) {
+          return { status: 'redirected', note: 'Redirects to ' + locDomain + ' — may be acquired or rebranded', method: 'redirect' };
+        }
       }
     }
-    return null;
-  } catch(e) { return null; }
+  } catch(e) {}
+
+  return null;
 }
 
 async function checkViaDNS(domain) {
